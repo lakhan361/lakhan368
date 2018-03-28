@@ -1,0 +1,29 @@
+#!/bin/bash
+sudo su
+apt-get update && apt-get upgrade -y
+sudo apt-get install ruby -y
+sudo apt-get install wget -y
+cd /home/ubuntu
+apt install python-pip -y
+pip install awscli
+var1="edUDzP823ZnlRuPjdB4BEsgQKR5WOte6hxbjJbfP"
+var2="AKIAJDRZJZQBUKBW2VMQ"
+var3="ap-south-1"
+var4="json"
+cat >/home/ubuntu/.aws/credentials EOF1
+[default]
+aws_secret_access_key = "$var1"
+aws_access_key_id = "$var2"
+EOF1
+cat >/home/ubuntu/.aws/config EOF2
+[default]
+ region = "$var3"
+ output = "$var4"
+EOF2
+aws s3 cp s3://aws-codedeploy-us-east-2/latest/install . --region us-east-2
+chmod +x ./install
+sed -i "s/sleep(.*)/sleep(10)/" install
+./install auto
+sudo service codedeploy-agent start
+apt-get install apache2 -y
+sudo service apache2 restart

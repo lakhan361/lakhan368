@@ -1,0 +1,12 @@
+version: 0.0
+os: linux
+files:
+   - source: /
+     destination: /var/www/html
+     overwrite: purge
+permissions:
+   - object: /var/www/html
+     pattern: "**"
+     mode: 755
+     type:
+       - file

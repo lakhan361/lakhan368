@@ -1,0 +1,460 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CloudFormation template to create the VPC with one public and private subnet and creation of ec2 instance with installation of ssm agent in it",
+
+  "Parameters": {
+    "VPCCidr": {
+      "Description": "Type the CidrBlock for VPC",
+      "Type": "String"
+    },
+    "Subnet1Cidr": {
+      "Description": "Type the CidrBlock for subnet 1",
+      "Type": "String"
+    },
+    "Subnet2Cidr": {
+      "Description": "Type the CidrBlock for subnet 2",
+      "Type": "String"
+    },
+
+    "SSHLocation": {
+      "Description": " The IP address range that can be used to SSH to the EC2 instances",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "0.0.0.0/0",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+  "AvailabilityZone1": {
+      "Description": "Select the AvailabilityZone",
+      "Type": "AWS::EC2::AvailabilityZone::Name"
+    },  "AvailabilityZone2": {
+      "Description": "Select the AvailabilityZone",
+      "Type": "AWS::EC2::AvailabilityZone::Name"
+    },
+
+
+    "KeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "EC2 Key Pair for SSH Access",
+      "Default": "lakhan361",
+      "ConstraintDescription": "can contain only alphanumeric characters, spaces, dashes and underscores."
+    },
+
+
+
+    "InstanceType": {
+      "Type": "String",
+      "Default": "t2.micro",
+
+      "Description": "Enter t2.micro, m1.small, or m1.large. Default is t2.micro."
+    }
+
+},
+
+    "Resources": {
+      "VPC": {
+        "Type": "AWS::EC2::VPC",
+        "Properties": {
+          "EnableDnsSupport": "true",
+          "EnableDnsHostnames": "true",
+          "CidrBlock": {
+            "Ref": "VPCCidr"
+          },
+          "Tags": [{
+              "Key": "Project",
+              "Value": "cldfrmvpc"
+            },
+            {
+              "Key": "Environment",
+              "Value": "lksEnv"
+            },
+            {
+              "Key": "Name",
+              "Value": "cldfrm"
+            }
+
+          ]
+        }
+      },
+      "VPCSubnet1": {
+        "DependsOn": ["VPC"],
+
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "VpcId": {
+            "Ref": "VPC"
+          },
+          "AvailabilityZone": {
+            "Ref": "AvailabilityZone1"
+          },
+          "CidrBlock": {
+            "Ref": "Subnet1Cidr"
+          },
+          "Tags": [{
+            "Key": "Environment",
+            "Value": "Public-subnet1"
+          }]
+        }
+      },
+
+      "VPCSubnet2": {
+        "Type": "AWS::EC2::Subnet",
+        "DependsOn": ["VPCSubnet1"],
+        "Properties": {
+          "VpcId": {
+            "Ref": "VPC"
+          },
+          "AvailabilityZone": {
+            "Ref": "AvailabilityZone2"
+          },
+          "CidrBlock": {
+            "Ref": "Subnet2Cidr"
+          },
+          "Tags": [{
+            "Key": "Environment",
+            "Value": "Private-subnet2"
+          }]
+        }
+      },
+
+      "IG": {
+        "Type": "AWS::EC2::InternetGateway",
+        "Properties": {
+          "Tags": [{
+            "Key": "Name",
+            "Value": "IGW"
+          }]
+        }
+      },
+
+      "AttachGateway": {
+        "Type": "AWS::EC2::VPCGatewayAttachment",
+        "Properties": {
+          "VpcId": {
+            "Ref": "VPC"
+          },
+          "InternetGatewayId": {
+            "Ref": "IG"
+          }
+        }
+      },
+
+
+
+      "PublicRouteTable": {
+        "Type": "AWS::EC2::RouteTable",
+        "Properties": {
+          "VpcId": {
+            "Ref": "VPC"
+          },
+          "Tags": [{
+            "Key": "Name",
+            "Value": "public_routetable"
+          }]
+        }
+      },
+
+      "PublicRoute": {
+        "Type": "AWS::EC2::Route",
+        "DependsOn": "AttachGateway",
+        "Properties": {
+          "RouteTableId": {
+            "Ref": "PublicRouteTable"
+          },
+          "DestinationCidrBlock": "0.0.0.0/0",
+          "GatewayId": {
+            "Ref": "IG"
+          }
+        }
+      },
+
+
+      "PublicSubnetRouteTableAssociation": {
+        "Type": "AWS::EC2::SubnetRouteTableAssociation",
+        "Properties": {
+          "SubnetId": {
+            "Ref": "VPCSubnet1"
+          },
+          "RouteTableId": {
+            "Ref": "PublicRouteTable"
+          }
+        }
+      },
+
+
+
+      "eip": {
+        "Type": "AWS::EC2::EIP",
+        "Properties": {
+          "Domain": "vpc"
+        }
+      },
+
+      "NAT": {
+        "DependsOn": "AttachGateway",
+        "Type": "AWS::EC2::NatGateway",
+        "Properties": {
+          "SubnetId": {
+            "Ref": "VPCSubnet2"
+          },
+          "AllocationId": {
+            "Fn::GetAtt": ["eip", "AllocationId"]
+          }
+        }
+      },
+
+      "PrivateRouteTable": {
+        "DependsOn": "NAT",
+        "Type": "AWS::EC2::RouteTable",
+        "Properties": {
+          "VpcId": {
+            "Ref": "VPC"
+          },
+          "Tags": [{
+              "Key": "Network",
+              "Value": "Public"
+            },
+            {
+              "Key": "Name",
+              "Value": "public_routetable"
+            }
+          ]
+        }
+      },
+
+      "PrivateNATRouteTableAssociation": {
+        "DependsOn": "PrivateRouteTable",
+        "Type": "AWS::EC2::Route",
+        "Properties": {
+          "RouteTableId": {
+            "Ref": "PrivateRouteTable"
+          },
+          "DestinationCidrBlock": "0.0.0.0/0",
+          "NatGatewayId": {
+            "Ref": "NAT"
+          }
+        }
+      },
+
+
+
+      "privateSubnetRouteTableAssociation": {
+        "Type": "AWS::EC2::SubnetRouteTableAssociation",
+        "Properties": {
+          "SubnetId": {
+            "Ref": "VPCSubnet2"
+          },
+          "RouteTableId": {
+            "Ref": "PrivateRouteTable"
+          }
+        }
+      },
+
+
+
+
+
+
+      "myDummyRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "AssumeRolePolicyDocument": {
+            "Statement": [{
+              "Effect": "Allow",
+              "Principal": {
+                "Service": ["ec2.amazonaws.com"]
+              },
+              "Action": ["sts:AssumeRole"]
+            }]
+          },
+          "Path": "/"
+        }
+      },
+
+      "myDummyInstanceProfile": {
+        "Type": "AWS::IAM::InstanceProfile",
+        "Properties": {
+          "Path": "/",
+          "Roles": [{
+            "Ref": "myDummyRole"
+          }]
+        }
+      },
+
+
+
+
+
+      "myDummyRolePolicies": {
+        "Type": "AWS::IAM::Policy",
+        "Properties": {
+          "PolicyName": "myDummy",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Effect": "Allow",
+              "Action": [
+                "events:DeleteRule",
+                "events:DescribeRule",
+                "events:DisableRule",
+                "events:EnableRule",
+                "events:PutRule",
+                "iam:CreateServiceSpecificCredential",
+                "iam:UpdateServiceSpecificCredential",
+                "iam:DeleteServiceSpecificCredential",
+                "iam:ResetServiceSpecificCredential",
+                "iam:DeleteSSHPublicKey",
+                "iam:GetSSHPublicKey",
+                "iam:ListSSHPublicKeys",
+                "iam:UpdateSSHPublicKey",
+                "iam:UploadSSHPublicKey",
+                "iam:ListAccessKeys",
+                "codedeploy:Batch*",
+                "codedeploy:CreateDeployment",
+                "codedeploy:Get*",
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+                "s3:ListBucket",
+                "codedeploy:List*",
+                "codedeploy:RegisterApplicationRevision",
+               "iam:ListSSHPublicKeys",
+               "iam:ListServiceSpecificCredentials",
+               "iam:ListAccessKeys",
+               "iam:GetSSHPublicKey",
+               "events:DeleteRule",
+               "events:DescribeRule",
+               "events:DisableRule",
+               "events:EnableRule",
+               "sns:CreateTopic",
+                "sns:DeleteTopic",
+                "sns:Subscribe",
+                "sns:Unsubscribe",
+                "sns:SetTopicAttributes",
+                "sns:ListTopics",
+                "sns:ListSubscriptionsByTopic",
+                "sns:GetTopicAttributes",
+               "codedeploy:*",
+               "events:PutRule",
+               "events:PutTargets",
+               "events:RemoveTargets",
+               "events:ListTargetsByRule",
+               "sqs:SendMessage",
+                "sqs:GetQueueUrl",
+                "sns:Publish",
+                "iam:ListUsers",
+                "events:PutTargets",
+                "events:RemoveTargets",
+                "events:ListTargetsByRule",
+                "cloudwatch:PutMetricData",
+                "ds:CreateComputer",
+                "ds:DescribeDirectories",
+                "ec2:DescribeInstanceStatus",
+                "logs:*",
+                "ssm:*",
+                "ec2messages:*"
+              ],
+              "Resource": "*"
+            }]
+          },
+          "Roles": [{
+            "Ref": "myDummyRole"
+          }]
+        }
+      },
+
+
+
+
+      "WebApplicationServerSG": {
+        "DependsOn": "VPC",
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupDescription": "Enable HTTP access via port 80",
+         "VpcId" : {"Ref" : "VPC"},
+          "SecurityGroupIngress": [{
+              "IpProtocol": "tcp",
+              "FromPort": "80",
+              "ToPort": "80",
+              "CidrIp": "0.0.0.0/0"
+            },
+            {
+              "IpProtocol": "tcp",
+              "FromPort": "22",
+              "ToPort": "22",
+              "CidrIp": {
+                "Ref": "SSHLocation"
+              }
+            }
+          ]
+        }
+      }
+
+      ,
+
+
+
+
+      "Ec2Instance": {
+    "DependsOn": "VPC",
+    "Type": "AWS::EC2::Instance",
+    "Properties": {
+      "KeyName": {
+        "Ref": "KeyName"
+      },
+
+
+ "NetworkInterfaces": [
+                {
+                    "SubnetId": {"Ref": "VPCSubnet1"},
+                    "AssociatePublicIpAddress": "true",
+                    "DeviceIndex": "0",
+                    "GroupSet": [{ "Ref" : "WebApplicationServerSG" }]
+                }
+            ]
+
+
+
+,
+
+
+      "InstanceType": {
+        "Ref": "InstanceType"
+      },
+      "ImageId": "ami-84e3b2eb",
+      "IamInstanceProfile": {
+        "Ref": "myDummyInstanceProfile"
+      },
+ "Tags" : [  {
+  "Key" : "Name",
+  "Value" : "CloudFormation"
+}],
+
+
+
+          "UserData": {
+            "Fn::Base64": {
+              "Fn::Join": ["", [
+                "#!/bin/bash\n",
+                "sudo su\n",
+                "sudo  adduser lakhan361\n",
+                "cd /home/lakhan361\n",
+                "mkdir .ssh \n",
+                "chmod 700 .ssh\n",
+                "cd .ssh\n",
+                "touch authorized_keys\n",
+                "chmod 600 authorized_keys\n",
+                "echo ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCypbvJaxt/H7QZh1P6BkzZ1TtkMomymoyY3T7RqSCT5us6LcZugt6LNPEG38bTHKpLNrhNR05KYOwrN2m62oQR+4NfzhjyWox7vo04ixi3YsNE9ufBmRVo7ZAUdx2eb2xRaMxp1biPHmFr69wOWUF5YlxN2jEfVuDXMsvegTs8G6JnBp6J0X7nBKPbqUcP2ITutzzJnXAw0qqEeLnNzBoIwg0cTtyjylH8N6tVLNkMCBmTXBSeNyuPnRe+KBSNOWCTSlkr6ZyWD4xXRvL42nBMYUxs5Fe3AjpLKve55zIE5UdfStZa6Ve13PF6MyQOtAIPPS8Yg4F/lp+DHkoHCffz >> authorized_keys \n",
+                "sudo chown -R lakhan361  /home/lakhan361/.ssh/\n",
+                "cd \n",
+                "mkdir /tmp/ssm\n",
+                "cd /tmp/ssm\n",
+                "wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb\n",
+                "dpkg -i amazon-ssm-agent.deb\n",
+              ]]
+            }
+          }
+        }
+      }
+    }
+  }
